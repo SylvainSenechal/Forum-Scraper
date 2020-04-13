@@ -2,18 +2,20 @@
 
 const http = require("https")
 const fs = require('fs')
+const credentials = require('./credentials.js')
+console.log(credentials)
+console.log(credentials.user)
 
+const { Pool, Client } = require('pg')
 
-// const { Pool, Client } = require('pg')
-//
-// const client = new Client({
-//   user: 'me',
-//   host: 'localhost',
-//   database: 'coucou2',
-//   password: 'password',
-//   port: 5432,
-// })
-// client.connect()
+const client = new Client({
+  user: credentials.user,
+  host: credentials.host,
+  database: credentials.database,
+  password: credentials.password,
+  port: credentials.port,
+})
+client.connect()
 
 
 
