@@ -1,4 +1,4 @@
-// TODO: DASHBOARD HARDWARE.FR
+// https://ec56229aec51f1baff1d-185c3068e22352c56024573e929788ff.ssl.cf1.rackcdn.com/attachments/original/6/4/2/002746642.pdf
 
 const http = require("https")
 const fs = require('fs')
@@ -41,15 +41,12 @@ const updatePathOptions = options => {
     })
     requestForMovedPermanently.end()
   })
-
 }
 
 const startScraper = async () => {
-  console.log(options)
   options.path = await updatePathOptions(options)
-  console.log(options)
+  console.log(options.path)
   scrap()
-
 }
 
 startScraper()
