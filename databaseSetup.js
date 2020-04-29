@@ -36,12 +36,11 @@ const createTables = async () => {
     idMessage INT PRIMARY KEY,
     writter VARCHAR(50) references poster(pseudo),
     dateMessage DATE,
-    timeMessage TIMESTAMP,
+    timeMessage TIME,
+    pageNumber INT,
     messageContent VARCHAR(80)
   );`)
   // await client.query('DROP TABLE poster')
-  await client.query('INSERT INTO poster (pseudo) VALUES ($1)', ['vincent'])
-  await client.query('INSERT INTO message (idMessage, writter) VALUES ($1, $2)', ['3', 'vincent'])
   client.end()
 }
 
