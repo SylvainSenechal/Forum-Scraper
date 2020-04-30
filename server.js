@@ -3,10 +3,7 @@
 const http = require("https")
 const fs = require('fs')
 const credentials = require('./credentials.js')
-console.log(credentials)
-console.log(credentials.user)
-
-const { Pool, Client } = require('pg')
+const { Client } = require('pg')
 
 const client = new Client({
   user: credentials.user,
@@ -17,31 +14,55 @@ const client = new Client({
 })
 client.connect()
 
-const computeOptions = (pageNumber, nameTopic) => {
+const MAX_MESSAGE_PER_PAGE = 40 // TODO: gerer redondance premier message doublé
+const DEFAULT_PAGE_NUMBER = 11025
+const URL_infos = {
+  pageNumber: DEFAULT_PAGE_NUMBER,
+  nameTopic: '/hfr/Discussions/Loisirs/pognon-bourse-sujet_16022_'
+}
+
+const computeOptions = () => {
   return {
     host: 'forum.hardware.fr',
-    path: `${nameTopic}${pageNumber}.htm`,
+    path: `${URL_infos.nameTopic}${URL_infos.pageNumber}.htm`,
     method: 'GET'
   }
 }
 
-let pageNumber = 11026
-let nameTopic = '/hfr/Discussions/Loisirs/pognon-bourse-sujet_16022_'
-let options = computeOptions(pageNumber, nameTopic)
+const getPageNumber = async () => {
+  try {
+    pageNumber = (await client.query('SELECT * FROM message ORDER BY idMessage DESC LIMIT 1')).rows[0].pagenumber
+  } catch (error) {
+    pageNumber = DEFAULT_PAGE_NUMBER
+  }
+  return pageNumber
+}
 
-const updatePathOptions = options => {
+// const updatePageNumber = async () => {
+//   let numberOfMessageOnCurrentPage = (await client.query('SELECT COUNT(*) FROM message WHERE pageNumber = $1', [URL_infos.pageNumber])).rows[0].count
+//   console.log(numberOfMessageOnCurrentPage)
+//   if (numberOfMessageOnCurrentPage >= MAX_MESSAGE_PER_PAGE) URL_infos.pageNumber += 1
+// }
+
+const handleMovePermanently = () => {
+  let options = computeOptions()
+
   let updatedURL = ''
   return new Promise((resolve, reject) => {
     let requestForMovedPermanently = http.request(options)
     requestForMovedPermanently.on('response', res => {
-      console.log(`statusCode: ${res.statusCode}`)
-      console.log('new location : ', res.headers.location)
-      // options.path = res.headers.location
-      updatedURL = res.statusCode === 301 ? res.headers.location : options.path
-      resolve(updatedURL)
+      console.log(`Status Code for moved permanently test : ${res.statusCode}`)
+      console.log(`New URL location : ${res.headers.location}`)
+      // updatedURL = res.statusCode === 301 ? res.headers.location : options.path
+      // newNameTopic = updatedURL.match(/\/hfr\/Discussions\/Loisirs\/[a-z-_]*16022_/)[0]
+      // resolve(newNameTopic)
+      res.statusCode === 301 ? resolve(res.headers.location.match(/\/hfr\/Discussions\/Loisirs\/[a-z-_]*16022_/)[0])
+       : resolve(URL_infos.nameTopic)
+      // newNameTopic = updatedURL.match(/\/hfr\/Discussions\/Loisirs\/[a-z-_]*16022_/)[0]
+      // resolve(newNameTopic)
     })
     requestForMovedPermanently.on('error', error => {
-      console.log('problem with request: ' + error.message)
+      console.log('Problem with test moved permanently request: ' + error.message)
       reject(err)
     })
     requestForMovedPermanently.end()
@@ -49,68 +70,76 @@ const updatePathOptions = options => {
 }
 
 const startScraper = async () => {
-  let newURL = await updatePathOptions(options)
-  nameTopic = newURL.match(/\/hfr\/Discussions\/Loisirs\/[a-z-_]*16022_/)[0]
-  options = computeOptions (pageNumber, nameTopic)
-
-  let lastPageMessage = (await client.query('SELECT * FROM message ORDER BY idMessage DESC LIMIT 1')).rows[0].pagenumber
-  console.log(lastPageMessage)
-  scrap()
+  URL_infos.pageNumber = await getPageNumber()
+  for (let i = 0; i < 20; i++) {
+    console.log()
+    URL_infos.nameTopic = await handleMovePermanently()
+    console.log(URL_infos.nameTopic)
+    let options = computeOptions()
+    console.log(options)
+    let incrementNewPage = await scrap(options)
+    URL_infos.pageNumber += incrementNewPage
+    console.log(URL_infos.pageNumber)
+  }
 }
 
 startScraper()
 
-const scrap = () => {
-  let req = http.request(options, res => {
-    console.log(`statusCode: ${res.statusCode}`)
-    console.log('HEADERS: ' + JSON.stringify(res.headers))
-    console.log(res.headers.location)
-    res.setEncoding('utf8')
+const scrap = options => {
+  return new Promise ((resolve, reject) => {
+    let request = http.request(options, result => {
+      result.setEncoding('utf8')
+      console.log(`Scraping Status Code: ${result.statusCode}`)
+      // console.log('HEADERS: ' + JSON.stringify(result.headers))
+      if (result.statusCode !== 200) console.log('FAILED')
 
-    if (res.statusCode !== 200) console.log('FAILED')
+      let data = ''
+      result.on('data', chunk => {
+        data += chunk
+      })
+      result.on('end', async () => {
+        let incrementNewPage = data.match(new RegExp(parseInt(URL_infos.pageNumber) + 1)) === null ? 0 : 1
 
-    let data = ''
-    res.on('data', chunk => {
-      data += chunk
-    })
-    res.on('end', async () => {
-      console.log('Get Request Done')
-      let newMessages = true
-      while (newMessages === true) {
-        let {updatedData, infos} = getOneMessage(data)
-        data = updatedData
-        if (infos === 'noMoreMessage') {
-          console.log('no more messages')
-          newMessages = false
-        } else {
-          // console.log(infos)
-          await client.query('INSERT INTO poster (pseudo) VALUES ($1) on conflict(pseudo) do nothing', [infos.namePoster])
-          await client.query(
-            'INSERT INTO message (idMessage, writter, dateMessage, timeMessage, pageNumber, messageContent) VALUES ($1, $2, $3, $4, $5, $6) on conflict(idMessage) do nothing',
-            [infos.idPost, infos.namePoster, infos.datePost, infos.timePost, 11025, '']
-          )
+        let newMessages = true
+        while (newMessages === true) {
+          let {updatedData, infos} = getOneMessage(data)
+          data = updatedData
+          if (infos === 'noMoreMessage') {
+            newMessages = false
+          } else {
+            await client.query('INSERT INTO poster (pseudo) VALUES ($1) on conflict(pseudo) do nothing', [infos.namePoster])
+            await client.query(
+              'INSERT INTO message (idMessage, writter, dateMessage, timeMessage, pageNumber, messageContent) VALUES ($1, $2, $3, $4, $5, $6) on conflict(idMessage) do nothing',
+              [infos.idPost, infos.namePoster, infos.datePost, infos.timePost, infos.pageNumber, '']
+            )
+          }
         }
-      }
-      req.end()
+        request.end()
+        resolve(incrementNewPage)
+      })
     })
+    request.on('error', error => {
+      console.log('problem with request: ' + error.message)
+      reject()
+    })
+    request.end()
   })
-
-  req.on('error', error => {
-    console.log('problem with request: ' + error.message)
-  })
-  req.end()
 }
 
 const getOneMessage = data => {
+  // let pageNumber = data.match(/<b>[0-9]*<\/b>/)[0] // Search for page number in page
+  // pageNumber = pageNumber.match(/[0-9]+/)[0] // remove <b> </b>
+  // console.log(pageNumber)
+
   let infos = {
     namePoster: '',
     idPost: '',
     datePost: '',
     timePost: '',
+    pageNumber: URL_infos.pageNumber,
     messageContent: '',
     quoting: [] // liste des messages quotés dans ce post, compter le nombre de messages quoté après
   }
-
 
   let messagePosition = data.search('messagetable')
   data = data.slice(messagePosition)
@@ -176,6 +205,11 @@ const getOneMessage = data => {
   if (endMessagePosition === -1) return {updatedData: data, infos: 'noMoreMessage'}
   return {updatedData: data, infos: infos}
 }
+
+
+// SELECT idmessage, writter, datemessage, timemessage, pagenumber, messagecontent
+// 	FROM public.message, poster
+// 	WHERE writter = pseudo and pseudo = 'kiwai10';
 
 
 // (function my_func() {
