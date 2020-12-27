@@ -15,5 +15,10 @@
   "bugs": {
     "url": "https://github.com/SylvainSenechal/Forum-Scraper/issues"
   },
-  "homepage": "https://github.com/SylvainSenechal/Forum-Scraper#readme"
+  "homepage": "https://github.com/SylvainSenechal/Forum-Scraper#readme",
+  "dependencies": {
+    "express": "^4.17.1",
+    "got": "^11.8.1",
+    "mongodb": "^3.6.3"
+  }
 }
