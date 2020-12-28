@@ -50,6 +50,21 @@ app.get('/messages/:user', async (req, res) => {
 
 	let messages = await cursorMessages.toArray()
 	
+	// console.log(messages)
+	res.status(200).json(messages)
+})
+
+app.get('/messages/:minPage/:maxPage', async (req, res) => {
+	const db = req.app.locals.database
+	const minPage = req.params.minPage
+	const maxPage = req.params.maxPage
+	console.log(minPage, maxPage)
+	let cursorMessages = await db.collection('Messages').find(
+		{pageNumber: {$gte: Number(minPage), $lte: Number(maxPage)} }
+	)
+
+	let messages = await cursorMessages.toArray()
+	
 	console.log(messages)
 	res.status(200).json(messages)
 })
