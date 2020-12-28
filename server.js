@@ -5,12 +5,22 @@ const app = express()
 const port = process.env.PORT
 const dbPassword = process.env.DB_PASSWORD
 const dbName = process.env.DB_NAME
-// app.use(bodyParser.json())
+app.use(express.json())
 
 const MongoClient = require('mongodb').MongoClient
 const ObjectId = require('mongodb').ObjectId
 const uri = `mongodb+srv://${dbName}:${dbPassword}@cluster0.uznmv.mongodb.net/retryWrites=true&w=majority`
 const client = new MongoClient(uri)
+
+app.use((req, res, next) => {
+	res.header('Access-Control-Allow-Origin', '*')
+	res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-type')
+	if (req.method === 'OPTIONS') {
+			res.header('Access-Control-Allow-Methods', 'PUT, POST, PATCH, DELETE, GET')
+			return res.status(200).json({})
+	}
+	next()
+})
 
 const connectDatabase = async () => {
 	try {
@@ -29,11 +39,26 @@ connectDatabase().then( () => {
 	scrapPages(10, 10)
 })
 
-
-
-app.get('/', (req, res) => {
+app.get('/messages/:user', async (req, res) => {
 	console.log('ok')
-	res.send( 'ok')
+	const db = req.app.locals.database
+	const user = req.params.user
+	console.log(user)
+	let cursorMessages = await db.collection('Messages').find(
+		{namePoster: user}
+	)
+
+	let messages = await cursorMessages.toArray()
+	
+	console.log(messages)
+	res.status(200).json(messages)
+})
+
+app.post('/scratch', async (req, res) => {
+	let startPage = req.body.startPage
+	let endPage = req.body.endPage
+	scrapPages(startPage, endPage)
+	res.status(200)
 })
 
 app.use((req, res, next) => {
@@ -52,10 +77,7 @@ app.use((error, req, res, next) => {
 	})
 })
 
-// VOIR DATES TRANSFORMER EN NB
 const scrapPages = async (startPage, endPage) => {
-	// const db = req.app.locals.database
-
 	const db = app.locals.database
 	for (let pageNumber = startPage; pageNumber <= endPage; pageNumber++) {
 		console.log(pageNumber)
@@ -74,7 +96,7 @@ const scrapPages = async (startPage, endPage) => {
 				if (!found) {
 					await db.collection('Messages').insertOne(message)
 				} else {
-					console.log('already exists')
+					// console.log('already exists')
 				}
 			})
 		)
@@ -89,20 +111,6 @@ const getPageHTML = async pageNumber => {
 		console.log(error.response.body)
 	}
 }
-
-
-
-// // TODO : revoir
-// app.use((req, res, next) => {
-//     res.header('Access-Control-Allow-Origin', '*')
-//     res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-type')
-//     if (req.method === 'OPTIONS') {
-//         res.header('Access-Control-Allow-Methods', 'PUT, POST, PATCH, DELETE, GET')
-//         return res.status(200).json({})
-//     }
-//     next()
-// })
-
 
 const extractNextMessage = (data, pageNumber) => {
 	const infos = {
