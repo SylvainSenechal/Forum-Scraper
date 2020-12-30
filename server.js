@@ -8,7 +8,7 @@ const dbName = process.env.DB_NAME
 app.use(express.json())
 
 const MongoClient = require('mongodb').MongoClient
-const ObjectId = require('mongodb').ObjectId
+// const ObjectId = require('mongodb').ObjectId
 const uri = `mongodb+srv://${dbName}:${dbPassword}@cluster0.uznmv.mongodb.net/retryWrites=true&w=majority`
 const client = new MongoClient(uri)
 
@@ -35,8 +35,7 @@ const connectDatabase = async () => {
 }
 
 connectDatabase().then( () => {
-	console.log('okkkk')
-	scrapPages(10, 10)
+	console.log('Connected to database')
 })
 
 app.get('/messages/:user', async (req, res) => {
@@ -47,20 +46,22 @@ app.get('/messages/:user', async (req, res) => {
 	let cursorMessages = await db.collection('Messages').find(
 		{namePoster: user}
 	)
-
 	let messages = await cursorMessages.toArray()
-	
 	// console.log(messages)
 	res.status(200).json(messages)
 })
 
-app.get('/messages/:minPage/:maxPage', async (req, res) => {
+app.get('/messages/:minDate/:maxDate', async (req, res) => {
 	const db = req.app.locals.database
-	const minPage = req.params.minPage
-	const maxPage = req.params.maxPage
-	console.log(minPage, maxPage)
+	const minDate = req.params.minDate.split('-')
+	const maxDate = req.params.maxDate.split('-')
+	console.log(minDate, maxDate)
 	let cursorMessages = await db.collection('Messages').find(
-		{pageNumber: {$gte: Number(minPage), $lte: Number(maxPage)} }
+		// {pageNumber: {$gte: Number(minPage), $lte: Number(maxPage)} }
+		{date: {
+			$lte: new Date(`${maxDate[1]}/${maxDate[2]}/${maxDate[0]}`),
+			$gte: new Date(`${minDate[1]}/${minDate[2]}/${minDate[0]}`),			
+		}}
 	)
 
 	let messages = await cursorMessages.toArray()
@@ -72,8 +73,8 @@ app.get('/messages/:minPage/:maxPage', async (req, res) => {
 app.post('/scratch', async (req, res) => {
 	let startPage = req.body.startPage
 	let endPage = req.body.endPage
-	scrapPages(startPage, endPage)
 	res.status(200)
+	scrapPages(startPage, endPage)
 })
 
 app.use((req, res, next) => {
@@ -132,12 +133,13 @@ const extractNextMessage = (data, pageNumber) => {
 		idPost: '',
 		namePoster: '',
 		datePost: '',
+		date: '',
 		day: '',
 		month: '', 
 		year: '',
 		timePost: '',
 		timeNumber: '',
-		pageNumber: pageNumber,
+		pageNumber: Number(pageNumber),
 	}
 
 	data = data.slice(data.search('messagetable'))
@@ -158,6 +160,9 @@ const extractNextMessage = (data, pageNumber) => {
 	infos.day = Number(day)
 	infos.month = Number(month)
 	infos.year = Number(year)
+
+	let date = new Date(`${month}/${day}/${year}`)
+	infos.date = date
 
 	const [hour, minute, second] = infos.timePost.split(':')
 	infos.timeNumber = Number(hour) * 3600 + Number(minute) * 60 + Number(second)
